@@ -77,7 +77,7 @@ get_data() {
         vlesspath=$(jq -r '.inbounds[] | select(.tag == "vless-in") | .transport.path' /etc/sing-box/config.json | cut -d "/" -f 2)
     fi
 
-    subspath=$(grep "location ~ ^/" /etc/nginx/nginx.conf | head -n 1 | cut -d "/" -f 2 | cut -d " " -f 1)
+    subspath=$(grep "location ~ ^/" /etc/nginx/nginx.conf | tail -n 1 | cut -d "/" -f 2 | cut -d " " -f 1)
     rulesetpath=$(grep "alias /var/www/" /etc/nginx/nginx.conf | head -n 1 | cut -d "/" -f 4)
 
     get_ip
@@ -1996,7 +1996,7 @@ update_ssb() {
 
     if [[ $update_script =~ '#!/bin/bash' ]]
     then
-        export version="1.4.7" language
+        export version="1.4.8" language
         export -f get_ip templates get_data check_users check_github_template get_pass edit_configs_loop add_rule_sets_loop sync_client_configs_main
         bash <(echo "${update_script}")
         exit 0

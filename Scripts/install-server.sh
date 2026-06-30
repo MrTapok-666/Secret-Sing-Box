@@ -798,15 +798,15 @@ enable_bbr() {
 
 downgrade_nasty_warp() {
     # Because some WARP releases are buggy...
-    warp_version="2025.6.1335.0"
+    warp_version="2026.3.846.0"
     proc_arch="amd64"
     [[ $(uname -m) == "aarch64" || $(uname -m) == "arm64" ]] && proc_arch="arm64"
-    wget -q https://pkg.cloudflareclient.com/pool/${os_codename}/main/c/cloudflare-warp/cloudflare-warp_${warp_version}_${proc_arch}.deb
+    wget -q -P /tmp https://pkg.cloudflareclient.com/pool/${os_codename}/main/c/cloudflare-warp/cloudflare-warp_${warp_version}_${proc_arch}.deb
 
     if [[ $? -eq 0 ]]
     then
-        dpkg -i cloudflare-warp_${warp_version}_${proc_arch}.deb
-        rm -f ./cloudflare-warp_${warp_version}_${proc_arch}.deb
+        apt install /tmp/cloudflare-warp_${warp_version}_${proc_arch}.deb -y
+        rm -f /tmp/cloudflare-warp_${warp_version}_${proc_arch}.deb
         apt-mark hold cloudflare-warp
     fi
 }
@@ -835,8 +835,8 @@ install_packages() {
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
     gpg --dry-run --quiet --no-keyring --import --import-options import-show /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
     echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ ${os_codename} main" | tee /etc/apt/sources.list.d/cloudflare-client.list
-    apt-get update -y && apt-get install cloudflare-warp -y
-    #downgrade_nasty_warp
+    #apt-get update -y && apt-get install cloudflare-warp -y
+    downgrade_nasty_warp
 
     [[ ! -d /etc/apt/keyrings ]] && mkdir -p /etc/apt/keyrings
     curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc && chmod a+r /etc/apt/keyrings/sagernet.asc
@@ -1887,7 +1887,7 @@ cat > /etc/nginx/nginx.conf <<EOF
 user                 www-data;
 pid                  /run/nginx.pid;
 worker_processes     auto;
-worker_rlimit_nofile 65535;
+worker_rlimit_nofile 131070;
 
 # Load modules
 include              /etc/nginx/modules-enabled/*.conf;
@@ -1921,7 +1921,13 @@ http {
 
     # Logging
     access_log                    off;
-    error_log                     off;
+    error_log                     /dev/null;
+
+    # File cache
+    open_file_cache               max=10000 inactive=60s;
+    open_file_cache_valid         120s;
+    open_file_cache_min_uses      2;
+    open_file_cache_errors        on;
 
     # SSL
     ssl_session_timeout           1d;
@@ -1996,10 +2002,11 @@ http {
         add_header Content-Security-Policy   "default-src 'self' http: https: ws: wss: data: blob: 'unsafe-inline'; frame-ancestors 'self';" always;
         add_header Permissions-Policy        "interest-cohort=()" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header_inherit merge;
         proxy_hide_header X-Powered-By;
 
         # . files
-        location ~ /\.(?!well-known) {
+        location ~ ^/\.(?!well-known) {
             deny all;
         }
 
@@ -2081,7 +2088,7 @@ cat > /etc/nginx/nginx.conf <<EOF
 user                 www-data;
 pid                  /run/nginx.pid;
 worker_processes     auto;
-worker_rlimit_nofile 65535;
+worker_rlimit_nofile 131070;
 
 # Load modules
 include              /etc/nginx/modules-enabled/*.conf;
@@ -2114,7 +2121,7 @@ http {
 
     # Logging
     access_log                off;
-    error_log                 off;
+    error_log                 /dev/null;
 
     # Site
     server {
@@ -2130,10 +2137,11 @@ http {
         add_header Content-Security-Policy   "default-src 'self' http: https: ws: wss: data: blob: 'unsafe-inline'; frame-ancestors 'self';" always;
         add_header Permissions-Policy        "interest-cohort=()" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header_inherit merge;
         proxy_hide_header X-Powered-By;
 
         # . files
-        location ~ /\.(?!well-known) {
+        location ~ ^/\.(?!well-known) {
             deny all;
         }
 
@@ -2202,7 +2210,6 @@ function trojan_auth(txn)
             return "trojan"
         end
     end
-    return "http"
 end
 
 core.register_fetches("trojan_auth", trojan_auth)
@@ -2220,23 +2227,24 @@ global
         chroot /var/lib/haproxy
         stats socket /run/haproxy/admin.sock mode 660 level admin
         stats timeout 30s
+        maxconn 5000
         user haproxy
         group haproxy
         daemon
 
         # Mozilla Intermediate
-        # ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305
-        # ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
-        # ssl-default-bind-options prefer-client-ciphers no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
-        # ssl-default-server-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305
-        # ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
-        # ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
-
-        # Mozilla Modern
+        ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305
         ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
         ssl-default-bind-options prefer-client-ciphers no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+        ssl-default-server-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305
         ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
         ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+
+        # Mozilla Modern
+        # ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+        # ssl-default-bind-options prefer-client-ciphers no-sslv3 no-tlsv10 no-tlsv11 no-tlsv12 no-tls-tickets
+        # ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+        # ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11 no-tlsv12 no-tls-tickets
 
         # DH parameters
         ssl-dh-param-file /etc/haproxy/dhparam.pem
@@ -2245,10 +2253,10 @@ defaults
         mode http
         log global
         option tcplog
-        option  dontlognull
-        timeout connect 5000
-        timeout client  50000
-        timeout server  50000
+        option dontlognull
+        timeout connect 5s
+        timeout client  50s
+        timeout server  50s
 
 frontend haproxy-tls
         mode tcp
@@ -2256,11 +2264,13 @@ frontend haproxy-tls
         bind :::443 v4v6 ssl crt /etc/haproxy/certs/${domain}.pem alpn h2,http/1.1
         tcp-request inspect-delay 5s
         tcp-request content accept if { req_ssl_hello_type 1 }
+        tcp-request content set-var(txn.trojan_backend) lua.trojan_auth
 
         # Backend rules
+        use_backend reject if !{ ssl_fc_has_sni }
         use_backend reject if !{ ssl_fc_sni -i ${domain} } !{ ssl_fc_sni -m end .${domain} }
+        use_backend trojan if { var(txn.trojan_backend) -m str trojan }
         ${comment_3}use_backend http-sub if { path_beg /${subspath}/ } || { path_beg /${rulesetpath}/ }
-        use_backend %[lua.trojan_auth]
         default_backend http-main
 
 backend trojan
@@ -2270,19 +2280,16 @@ backend trojan
 
 backend http-main
         mode http
-        timeout server 1h
         ${comment_2}${comment_3}http-request auth unless { http_auth(mycredentials) }
-        ${comment_1}${comment_3}http-request redirect code 301 location https://${redirect}%[capture.req.uri]
+        ${comment_1}${comment_3}http-request redirect code 301 location https://${redirect}%[path]
         ${comment_1}${comment_2}server nginx 127.0.0.1:11443
 
 ${comment_3}backend http-sub
         ${comment_3}mode http
-        ${comment_3}timeout server 1h
         ${comment_3}server nginx 127.0.0.1:11443
 
 backend reject
         mode http
-        timeout server 1h
         http-request deny
 
 ${comment_2}${comment_3}userlist mycredentials

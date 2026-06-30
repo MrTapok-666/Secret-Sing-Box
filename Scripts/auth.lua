@@ -16,7 +16,6 @@ function trojan_auth(txn)
             return "trojan"
         end
     end
-    return "http"
 end
 
 core.register_fetches("trojan_auth", trojan_auth)
